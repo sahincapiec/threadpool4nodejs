@@ -1,0 +1,41 @@
+{
+  "name": "threadpool4nodejs",
+  "version": "1.0.0",
+  "description": "NodeJS running on multi-threads made easy, powerful and lightweight.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "npx tsc -b",
+    "pbuild": "pnpx tsc -b",
+    "test": "npx jest --watch dist/test/*.*",
+    "ptest": "pnpx jest --watch dist/test/*.*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sahincapiec/threadpool4nodejs.git"
+  },
+  "keywords": [
+    "multi-threads",
+    "thread",
+    "task",
+    "pool",
+    "thread-pool",
+    "threadpool4nodejs",
+    "worker"
+  ],
+  "author": "Samir Hincapie",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/sahincapiec/threadpool4nodejs/issues"
+  },
+  "homepage": "https://github.com/sahincapiec/threadpool4nodejs#readme",
+  "devDependencies": {
+    "@types/jest": "~26.0.19",
+    "@types/node": "~14.14.14",
+    "jest": "~26.6.3",
+    "typescript": "~4.1.3"
+  },
+  "engines": {
+    "node": "^14",
+    "pnpm": "^4 || ^5"
+  }
+}
