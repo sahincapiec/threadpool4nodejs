@@ -4,8 +4,8 @@
   "description": "NodeJS running on multi-threads made easy, powerful and lightweight.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "npx tsc -b",
-    "pbuild": "pnpx tsc -b",
+    "build": "npx tsc -b -w",
+    "pbuild": "pnpx tsc -b -w",
     "test": "npx jest --watch dist/test/*.*",
     "ptest": "pnpx jest --watch dist/test/*.*"
   },
