@@ -1,123 +1,119 @@
 import { cpus } from "os";
-import Thread from "./thread";
+import Thread, { IThread } from "./thread";
 import { parentPort, threadId } from "worker_threads";
 import TaskManager, { ITask } from "./task-manager";
 import { IResult } from "./task-processor";
 
-export default class Tp4njs {
-    private static threadPool: Thread[] = [];
-    private static maxPoolSize: number = cpus().length;
-    private taskManager: TaskManager;
-
-    constructor() {
-        this.taskManager = new TaskManager();
-        this.setUpProcess();
-    }
-
-    setUpProcess() {
+export default {
+    threadPool: [] as IThread[],
+    maxPoolSize: cpus().length,
+    taskManager: TaskManager.new(),
+    new() {
         if (parentPort) {
             parentPort.on('message', (result: IResult) => {
-                if (Object.keys(result).includes('result') || Object.keys(result).includes('error')) {
-                    const unfinishedTask = this.taskManager.remove(result.id);
-                    if (result.error) {
-                        if (unfinishedTask?.reject) unfinishedTask?.reject(result.error);
-                    } else {
-                        if (unfinishedTask?.resolve) unfinishedTask.resolve(result.result);
+                const k = Object.keys(result)
+                if(k.includes(`result`)) {
+                    const unfinishedTask = TaskManager.remove(result.id, this.taskManager);
+                    if (unfinishedTask?.resolve) {
+                        unfinishedTask?.resolve(result.result);
                     }
-                }
+                } else if (k.includes(`error`)) {
+                    const unfinishedTask = TaskManager.remove(result.id, this.taskManager);
+                    if (unfinishedTask?.reject) {
+                        unfinishedTask?.reject(result.error);
+                    }
+                } 
             });
         }
-    }
-
-    pushTask = (taskDto: ITask) => {
+    },
+    pushTask(taskDto: ITask) {
         if (parentPort) {
             return this.pushToParent(taskDto);
-        } else {
-            return this.pushToThread(taskDto);
-        }
-    }
+        } 
+        
+        return this.pushToThread(taskDto);        
+    },
+    pushToParent(task: ITask) {
+        new Promise((resolve, reject) => {
+            TaskManager.createNewTaskFromTask(task, this.taskManager);
+            task.threadId = threadId
 
-    private pushToParent = (taskDto: ITask) => new Promise((resolve, reject) => {
-        const task = this.taskManager.createNewTask();
-        task.resolve = resolve;
-        task.reject = reject;
+            parentPort?.postMessage(task);
 
-        const taskToBeProcessed: ITask = {
-            args: taskDto.args,
-            id: task.id,
-            fn: taskDto.fn,
-            module: taskDto.module,
-            threadId: threadId,
-        }
-
-        parentPort?.postMessage(taskToBeProcessed);
-    });
-
-    private pushToThread = (taskDto: ITask) => {
+            task.resolve = resolve;
+            task.reject = reject;
+            task.fn = undefined;
+            task.args = undefined;
+            task.module = undefined;
+        });
+    },
+    pushToThread(taskDto: ITask) {
         let lessBussyThreadIndex = 0;
-        const threadPoolSize = Tp4njs.threadPool.length;
+        const threadPoolSize = this.threadPool.length;
         for (let index = 1; index < threadPoolSize; index++) {
-            if (Tp4njs.threadPool[index - 1].getTaskQueueSize() > Tp4njs.threadPool[index].getTaskQueueSize()) {
+            if ((this.threadPool[index - 1]).tasksManager.tasksQueue.length > (this.threadPool[index]).tasksManager.tasksQueue.length) {
                 lessBussyThreadIndex = index;
             }
         }
-        const lessBussyThread = Tp4njs.threadPool[lessBussyThreadIndex];
-        if (lessBussyThread && lessBussyThread.isOff() || threadPoolSize === Tp4njs.maxPoolSize) {
-            console.log("reuse thread pipe: ", lessBussyThreadIndex);
-
-            const task = lessBussyThread.createNewTask();
-            task.args = taskDto.args;
-            task.fn = taskDto.fn;
-            task.module = taskDto.module;
-
-            return lessBussyThread.push(task);
+        const lessBussyThread = this.threadPool[lessBussyThreadIndex];
+        if (lessBussyThread && Thread.isOff(lessBussyThread) || threadPoolSize === this.maxPoolSize) {
+            Thread.createNewTaskFromTask(taskDto, lessBussyThread);
+            return Thread.push(taskDto, lessBussyThread);
         } else {
-            const thread = new Thread();
-            const worker = thread.getWorker();
+            const thread = Thread.new();
+            const worker = thread.worker;
             worker.on('exit', () => {
                 this.remove(thread);
             });
             worker.on('message', (task: ITask) => {
-                if (task.fn) {
-                    this.pushToThread(task).then(result => {
-                        if (task.id) {
-                            const resultToBeSent: IResult = {
-                                id: task.id,
-                                threadId: worker.threadId,
-                                result,
-                            };
-                            Tp4njs.threadPool.find(current => current.getWorker().threadId === task.threadId)?.getWorker().postMessage(resultToBeSent);
-                        } else {
-                            throw new Error('Every task should have an ID except the exit task.');
-                        }
-                    }).catch(error => {
-                        const resultToBeSent: IResult = {
-                            id: task.id || -1,
-                            threadId: worker.threadId,
-                            error,
-                        };
-                        Tp4njs.threadPool.find(current => current.getWorker().threadId === task.threadId)?.getWorker().postMessage(resultToBeSent);
-                    });
+                if (!task.fn) {
+                    return
                 }
+                this.pushToThread(task)
+                    .then((result: any) => {
+                        if (!task.id) {
+                            throw 'Every task should have an ID except the exit task.';
+                        }
+                        const threadPoolLength = this.threadPool.length
+                        for(let i = 0; i < threadPoolLength; i++){
+                            const threadPool = this.threadPool[i]
+                            if(threadPool.worker.threadId === task.threadId){
+                                threadPool.worker.postMessage({
+                                    id: task.id,
+                                    threadId: worker.threadId,
+                                    result,
+                                })
+                                break;
+                            }
+                        }
+                    }).catch((error: any) => {
+                        const threadPoolLength = this.threadPool.length
+                        for(let i = 0; i < threadPoolLength; i++){
+                            const threadPool = this.threadPool[i]
+                            if(threadPool.worker.threadId === task.threadId){
+                                threadPool.worker.postMessage({
+                                    id: task.id || -1,
+                                    threadId: worker.threadId,
+                                    error,
+                                })
+                                break;
+                            }
+                        }
+                    }); 
             });
-            Tp4njs.threadPool.push(thread);
+            this.threadPool.push(thread);
 
-            const task = thread.createNewTask();
-            task.args = taskDto.args;
-            task.fn = taskDto.fn;
-            task.module = taskDto.module;
-
-            return thread.push(task);
+            Thread.createNewTaskFromTask(taskDto, thread);
+            return Thread.push(taskDto, thread);
         }
-    }
-
-    private remove(thread: Thread) {
-        const newThreadPool = [];
-        for (const currentThread of Tp4njs.threadPool) {
-            if (currentThread !== thread) {
-                newThreadPool.push(currentThread);
+    },
+    remove(thread: IThread) {
+        const threadPoolLength = this.threadPool.length
+        for(let i = 0; i < threadPoolLength; i++) {
+            if (this.threadPool[i] !== thread) {
+                this.threadPool.splice(i, 1);
+                return
             }
         }
-        Tp4njs.threadPool = newThreadPool;
     }
 }

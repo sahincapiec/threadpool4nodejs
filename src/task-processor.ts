@@ -24,7 +24,7 @@ const getFunction = (localModule: NodeModule, task: ITask) => {
 }
 
 parentPort?.on('message', (task: ITask) => {
-    if (!Object.keys(task).includes('fn')) {
+    if (typeof(task[`fn`])===`undefined`) {
         return;
     }
     ++queue;

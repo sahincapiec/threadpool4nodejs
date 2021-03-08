@@ -8,31 +8,29 @@ export interface ITask {
     threadId?: number,
 }
 
-export default class TaskManager {
-    private tasksQueue: ITask[];
-    private taskId: number;
+export interface ITaskManager {
+    tasksQueue: ITask[]
+    taskId: number
+}
 
-    constructor() {
-        this.tasksQueue = [];
-        this.taskId = 0;
-    }
-
-    createNewTask() {
-        const task: ITask = { id: ++this.taskId };
-        this.tasksQueue.push(task);
+export default {
+    new: ()=>({
+        tasksQueue: [] as ITask[],
+        taskId: 0,
+    }),
+    createNewTask(tm: ITaskManager) {
+        const task: ITask = { id: ++tm.taskId };
+        tm.tasksQueue.push(task);
         return task;
-    }
-
-    getTaskQueueSize = () => this.tasksQueue.length;
-
-    remove(id: number) {
-        const unfinishedTasks = this.tasksQueue;
-        const totalUnfinishedTasks = unfinishedTasks.length;
-        for (let index = 0; index < totalUnfinishedTasks; index++) {
-            const unfinishedTask = unfinishedTasks[index];
-            if (id === unfinishedTask.id) {
-                this.tasksQueue = this.tasksQueue.filter(currentTask => currentTask.id !== id);
-                return unfinishedTask;
+    },
+    createNewTaskFromTask(task: ITask, tm: ITaskManager) {
+        task.id = ++tm.taskId
+        tm.tasksQueue.push(task);
+    },
+    remove(id: number, tm: ITaskManager) {
+        for (let index = 0; index < tm.tasksQueue.length; index++) {
+            if (id === tm.tasksQueue[index].id) {
+                return tm.tasksQueue.splice(index, 1)[0];
             }
         }
     }

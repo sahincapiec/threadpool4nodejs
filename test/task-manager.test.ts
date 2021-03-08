@@ -1,7 +1,7 @@
 import TaskManager from "../src/task-manager"
 
 test("New created task must have a new id", ()=>{
-    const tm = new TaskManager()
-    const task = tm.createNewTask()
+    const tm = TaskManager.new()
+    const task = TaskManager.createNewTask(tm)
     expect(task.id).toBe(1)
 })

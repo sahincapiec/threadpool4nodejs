@@ -1,75 +1,72 @@
 import { Worker } from "worker_threads";
 import TaskProcessor, { IResult } from "./task-processor";
-import TaskManager, { ITask } from "./task-manager";
+import TaskManager, { ITask, ITaskManager } from "./task-manager";
 
-export default class Thread {
-    private worker: Worker;
-    private tasksManager: TaskManager;
+export interface IThread {
+    worker: Worker
+    tasksManager: ITaskManager
+}
 
-    constructor() {
-        this.worker = new Worker(TaskProcessor.fileName);
-        this.tasksManager = new TaskManager();
-        this.setUpWorker();
-    }
-
-    setUpWorker = () => {
-        this.worker.on('error', () => {
-            new Error(`Thread '${this.worker.threadId}' got an error.`);
+export default {
+    new() {
+        const thread = {
+            worker: new Worker(TaskProcessor.fileName),
+            tasksManager: TaskManager.new(),
+        }
+        this.setUpWorker(thread)
+        return thread
+    },
+    setUpWorker(thread: IThread) {
+        thread.worker.on('error', () => {            
+            throw `Thread '${thread.worker.threadId}' got an error.`
         });
-        this.worker.on('exit', (code) => {
+        thread.worker.on('exit', (code: any) => {
             if (code !== 0) {
-                new Error(`Thread '${this.worker.threadId}' stopped with exit code ${code}`);
+                throw `Thread '${thread.worker.threadId}' stopped with exit code ${code}`
             }
         });
-        this.worker.on('message', (result: IResult) => {
-            if (Object.keys(result).includes('result') || Object.keys(result).includes('error')) {
-                const unfinishedTask = this.tasksManager.remove(result.id);
-                if (result.error) {
-                    if (unfinishedTask?.reject) unfinishedTask?.reject(result.error);
-                } else {
-                    if (unfinishedTask?.resolve) unfinishedTask.resolve(result.result);
+        thread.worker.on('message', (result: IResult) => {
+            const k = Object.keys(result)
+            if(k.includes(`result`)) {
+                const unfinishedTask = TaskManager.remove(result.id, thread.tasksManager);
+                if (unfinishedTask?.resolve) {
+                    unfinishedTask.resolve(result.result);
                 }
-                this.shutdown();
-            }
+                this.shutdown(thread);
+            } else if (k.includes(`error`)) {
+                const unfinishedTask = TaskManager.remove(result.id, thread.tasksManager);
+                if (unfinishedTask?.reject) {
+                    unfinishedTask?.reject(result.error);
+                }
+                this.shutdown(thread);
+            } 
         });
-    }
-
-    isOff = () => this.worker === null;
-
-    getWorker = () => this.worker;
-
-    getTaskQueueSize = () => this.tasksManager.getTaskQueueSize();
-
-    createNewTask = () => {
-        return this.tasksManager.createNewTask();
-    }
-
-    push = (task: ITask) => {
+    },
+    isOff(thread: IThread) {
+        return thread.worker === null;
+    },
+    createNewTask(thread: IThread) {
+        return TaskManager.createNewTask(thread.tasksManager);
+    },
+    createNewTaskFromTask(task: ITask, thread: IThread) {
+        return TaskManager.createNewTaskFromTask(task, thread.tasksManager);
+    },
+    push(task: ITask, thread: IThread) {
         return new Promise((resolve, reject) => {
+            thread.worker?.postMessage(task);
+
             task.resolve = resolve;
             task.reject = reject;
-
-            const taskToBeProcessed: ITask = {
-                args: task.args,
-                id: task.id,
-                fn: task.fn,
-                module: task.module,
-            }
-
             task.fn = undefined;
             task.args = undefined;
             task.module = undefined;
-
-            this.worker?.postMessage(taskToBeProcessed);
         });
-    }
+    },
+    shutdown(thread: IThread) {
+        if (thread.tasksManager.tasksQueue.length > 0) return;
 
-    shutdown = () => {
-        if (this.tasksManager.getTaskQueueSize() > 0) return;
-
-        const task: ITask = {
+        this.push({
             fn: TaskProcessor.exit.name,
-        }
-        this.push(task);
+        }, thread);
     }
 }
