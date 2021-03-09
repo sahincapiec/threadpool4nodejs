@@ -10,9 +10,9 @@ export interface IResult {
 
 let queue = 0;
 
-const exit = async () => {
-    while (queue > 1) {
-        await (() => new Promise(resolve => setTimeout(() => resolve(null), 100)))();
+const exit = () => {
+    if(queue > 1){
+        return
     }
     process.exit();
 }
@@ -37,6 +37,6 @@ parentPort?.on('message', (task: ITask) => {
 });
 
 export default {
+    FILE_NAME: __filename,
     exit,
-    fileName: __filename,
 }
