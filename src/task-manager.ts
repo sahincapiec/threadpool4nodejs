@@ -18,5 +18,15 @@ export default {
         task.id = ++tm.taskId
         tm.tasksQueue.push(task);
     },
-    remove: (id: number, tm: ITaskManager) => tm.tasksQueue.splice(tm.tasksQueue.findIndex(unfinishedTask => unfinishedTask.id === id), 1)[0],
+    remove: (id: number, tm: ITaskManager) => {
+        const length = tm.tasksQueue.length
+        let index = -1
+        for(let i = 0; i < length; i++){
+            if(tm.tasksQueue[i].id === id){
+                index = i
+                break
+            }
+        }
+        return tm.tasksQueue.splice(index, 1)[0]
+    },
 }

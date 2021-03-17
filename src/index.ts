@@ -18,22 +18,26 @@ export default {
                 tasksQueue: []
             }
         }
-        parentPort?.on('error', () => {
-            throw `Thread '${threadId}' got an error.`;
-        });
-        parentPort?.on('exit', (code) => {
-            if (code !== 0) {
-                throw `Thread '${threadId}' stopped with exit code ${code}`;
-            }
-        });
-        parentPort?.on('message', (result: IResult) => {
-            const unfinishedTask: any = TaskManager.remove(result.id, tp4njs.taskManager);
-            if (result.error) {
-                unfinishedTask?.reject(result.error);
-                return
-            } 
-            unfinishedTask?.resolve(result.result);
-        });
+        if (parentPort && parentPort !== null){
+            parentPort.on('error', () => {
+                throw `Thread '${threadId}' got an error.`;
+            });
+            parentPort.on('exit', (code) => {
+                if (code !== 0) {
+                    throw `Thread '${threadId}' stopped with exit code ${code}`;
+                }
+            });
+            parentPort.on('message', (result: IResult) => {
+                const unfinishedTask: any = TaskManager.remove(result.id, tp4njs.taskManager);
+                if (result.error) {
+                    unfinishedTask.reject(result.error);
+                    return
+                } 
+                if(unfinishedTask){
+                    unfinishedTask.resolve(result.result);
+                }
+            });
+        }
         return tp4njs
     },
     pushTask(taskDto: ITask, tp4njs: ITP4NJS) {
@@ -46,7 +50,9 @@ export default {
     pushToParent: (taskDto: ITask, tp4njs: ITP4NJS) => new Promise((resolve, reject) => {
         TaskManager.createNewTaskFromTask(taskDto, tp4njs.taskManager);
         taskDto.threadId = threadId
-        parentPort?.postMessage(taskDto);
+        if(parentPort && parentPort!==null){
+            parentPort.postMessage(taskDto);
+        }
         taskDto.resolve = resolve;
         taskDto.reject = reject;
 
@@ -57,17 +63,18 @@ export default {
     pushToThread(taskDto: ITask) {
         let lessBussyThreadIndex = 0;
         const threadPoolSize = this.threadPool.length;
-        for (let index = 1; index < threadPoolSize; index++) {
-            if (this.threadPool[index - 1].tasksManager.tasksQueue.length > this.threadPool[index].tasksManager.tasksQueue.length) {
-                lessBussyThreadIndex = index;
+        if (threadPoolSize >= this.maxPoolSize){
+            for (let index = 1; index < threadPoolSize; index++) {
+                if (this.threadPool[index - 1].tasksManager.tasksQueue.length > this.threadPool[index].tasksManager.tasksQueue.length) {
+                    lessBussyThreadIndex = index;
+                }
             }
+            const lessBussyThread = this.threadPool[lessBussyThreadIndex];
+            if (lessBussyThread && Thread.isOff(lessBussyThread) || threadPoolSize >= this.maxPoolSize) {
+                Thread.createNewTaskFromTask(taskDto, lessBussyThread);
+                return Thread.push(taskDto, lessBussyThread);
+            } 
         }
-        const lessBussyThread = this.threadPool[lessBussyThreadIndex];
-        if (lessBussyThread && Thread.isOff(lessBussyThread) || threadPoolSize === this.maxPoolSize) {
-            Thread.createNewTaskFromTask(taskDto, lessBussyThread);
-            return Thread.push(taskDto, lessBussyThread);
-        } 
-
         const thread = Thread.new();
         const worker = Thread.getWorker(thread);
         worker.on('error', () => {
@@ -79,23 +86,32 @@ export default {
             }
             this.remove(thread);
         });
-        worker.on('message', (msg: any) => {
-            if (msg.fn) {
-                this.pushToThread(msg).then((result:any) => {
+        worker.on('message', async (msg: any) => {
+            if (typeof(msg.fn)===`string`) {
+                const result = await this.pushToThread(msg)
                     msg.threadId = worker.threadId
                     msg.result = result
-                    Thread.getWorker(this.threadPool.find(current => Thread.getWorker(current).threadId === msg.threadId) || {} as IThread).postMessage(msg);  
-                })
+                    const length = this.threadPool.length
+                    const tps = this.threadPool
+                    const tID = msg.threadId
+                    for(let i = 0; i < length; i++){
+                        const currentTP = tps[i]
+                        if(Thread.getWorker(currentTP).threadId === tID){
+                            Thread.getWorker(currentTP || {} as IThread).postMessage(msg);  
+                            return
+                        }
+                    }
+                
                 return
             }
 
             const unfinishedTask: any = TaskManager.remove(msg.id, thread.tasksManager);
             if (msg.error) {
-                unfinishedTask?.reject(msg.error);
+                unfinishedTask.reject(msg.error);
                 Thread.shutdown(thread);
                 return
             } 
-            unfinishedTask?.resolve(msg.result);
+            unfinishedTask.resolve(msg.result);
             Thread.shutdown(thread);
         });
         this.threadPool.push(thread);

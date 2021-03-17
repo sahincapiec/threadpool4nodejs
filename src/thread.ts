@@ -22,7 +22,7 @@ export default {
     },
     push: (task: ITask, t: IThread) => {
         return new Promise((resolve, reject) => {
-            t.worker?.postMessage(task);
+            t.worker.postMessage(task);
             task.resolve = resolve;
             task.reject = reject;
 

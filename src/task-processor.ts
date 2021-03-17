@@ -19,22 +19,29 @@ const exit = () => {
 
 const getFunction = (localModule: NodeModule, task: ITask) => {
     const fnName = task.fn || '';
-    const taskModule = task.module ? require(task.module) : localModule.exports;
+    if(task.module){
+        const taskModule = require(task.module)
+        return taskModule.default[fnName] || taskModule[fnName];
+    } 
+    const taskModule = localModule.exports
     return taskModule.default[fnName] || taskModule[fnName];
 }
 
-parentPort?.on('message', (task: ITask) => {
-    if (typeof(task[`fn`])===`undefined`) {
-        return;
-    }
-    ++queue;
-    const fn = getFunction(module, task);
-    return new Promise(resolve => resolve(fn(task.args))).then(result => {
-        parentPort?.postMessage({ id: task.id, result, threadId } as IResult);
-    }).catch(error => {
-        parentPort?.postMessage({ id: task.id, error, threadId } as IResult);
-    }).finally(() => --queue);
-});
+if(parentPort && parentPort!==null){
+    const pPort = parentPort
+    pPort.on('message', async (task: ITask) => {
+        if (typeof(task[`fn`])!==`string`) {
+            return;
+        }
+        ++queue;
+
+        const fn = getFunction(module, task);
+        const result = await fn(task.args)
+        pPort.postMessage({ id: task.id, result, threadId } as IResult);
+        
+        --queue
+    });    
+}
 
 export default {
     FILE_NAME: __filename,
